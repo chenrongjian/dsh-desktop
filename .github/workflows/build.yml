@@ -115,10 +115,10 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched: false
           files: |
-            bundles/*.dmg
-            bundles/*.app.tar.gz
-            bundles/*.msi
-            bundles/*.exe
-            bundles/*.AppImage
-            bundles/*.deb
-            bundles/*.rpm
+            bundles/**/*.dmg
+            bundles/**/*.app.tar.gz
+            bundles/**/*.msi
+            bundles/**/*.exe
+            bundles/**/*.AppImage
+            bundles/**/*.deb
+            bundles/**/*.rpm
