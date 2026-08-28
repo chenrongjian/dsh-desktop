@@ -24,7 +24,7 @@ jobs:
             target: x86_64-apple-darwin
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-          - platform: ubuntu-22.04
+          - platform: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.platform }}
     steps:
@@ -39,10 +39,10 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Install Linux deps
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-24.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libpipewire-0.3-dev libspa-0.2-dev libasound2-dev libssl-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev libpipewire-0.3-dev libspa-0.2-dev libasound2-dev libssl-dev
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -74,6 +74,8 @@ jobs:
               curl -sL --retry 3 -o .ff_tmp/ff.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
               "/c/Windows/System32/tar.exe" -xf .ff_tmp/ff.zip -C .ff_tmp
               find .ff_tmp -name ffmpeg.exe | head -1 | xargs -I{} cp {} src-tauri/binaries/ffmpeg.exe
+              # tauri.conf.json 的 resources 声明为 binaries/ffmpeg,复制无扩展名副本以匹配
+              cp src-tauri/binaries/ffmpeg.exe src-tauri/binaries/ffmpeg
               ;;
             ubuntu-*)
               curl -sL --retry 3 -A "Mozilla/5.0 (X11; Linux x86_64)" -o .ff_tmp/ff.tar.xz "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
