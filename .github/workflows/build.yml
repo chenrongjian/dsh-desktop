@@ -4,6 +4,13 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0). Packages will be published to this tag."
+        required: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -89,3 +96,30 @@ jobs:
           path: |
             src-tauri/target/**/release/bundle/
           if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: bundles
+          pattern: bundle-*
+          merge-multiple: true
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched: false
+          files: |
+            bundles/*.dmg
+            bundles/*.app.tar.gz
+            bundles/*.msi
+            bundles/*.exe
+            bundles/*.AppImage
+            bundles/*.deb
+            bundles/*.rpm
