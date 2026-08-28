@@ -63,25 +63,26 @@ jobs:
       - name: Fetch ffmpeg binary
         shell: bash
         run: |
-          mkdir -p src-tauri/binaries
+          mkdir -p src-tauri/binaries .ff_tmp
           case "${{ matrix.platform }}" in
             macos-*)
-              curl -sL -o /tmp/ff.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
-              unzip -o /tmp/ff.zip -d src-tauri/binaries/
+              curl -sL --retry 3 -o .ff_tmp/ff.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
+              unzip -o .ff_tmp/ff.zip -d src-tauri/binaries/
               chmod +x src-tauri/binaries/ffmpeg
               ;;
             windows-*)
-              curl -sL -o /tmp/ff.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-              powershell -Command "Expand-Archive -Force /tmp/ff.zip -DestinationPath /tmp/ffx"
-              find /tmp/ffx -name ffmpeg.exe | head -1 | xargs -I{} cp {} src-tauri/binaries/ffmpeg.exe
+              curl -sL --retry 3 -o .ff_tmp/ff.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+              "/c/Windows/System32/tar.exe" -xf .ff_tmp/ff.zip -C .ff_tmp
+              find .ff_tmp -name ffmpeg.exe | head -1 | xargs -I{} cp {} src-tauri/binaries/ffmpeg.exe
               ;;
             ubuntu-*)
-              curl -sL -o /tmp/ff.tar.xz "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-              mkdir -p /tmp/ffx && tar xJf /tmp/ff.tar.xz -C /tmp/ffx
-              find /tmp/ffx -name ffmpeg -type f | head -1 | xargs -I{} cp {} src-tauri/binaries/ffmpeg
+              curl -sL --retry 3 -A "Mozilla/5.0 (X11; Linux x86_64)" -o .ff_tmp/ff.tar.xz "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+              mkdir -p .ff_tmp/ffx && tar xJf .ff_tmp/ff.tar.xz -C .ff_tmp/ffx
+              find .ff_tmp/ffx -name ffmpeg -type f | head -1 | xargs -I{} cp {} src-tauri/binaries/ffmpeg
               chmod +x src-tauri/binaries/ffmpeg
               ;;
           esac
+          rm -rf .ff_tmp
           ls -la src-tauri/binaries/
 
       - name: Build app bundles
