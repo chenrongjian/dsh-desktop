@@ -110,7 +110,7 @@ for r in json.load(sys.stdin):
 ```
 
 预期 7 个产物(名字示例,平台后缀按实际):
-`DeepSeek.Harness.Desktop_<ver>_aarch64.dmg`、`..._x64.dmg`、`..._x64-setup.exe`、`..._x64_en-US.msi`、`.AppImage`、`.deb`、`.rpm`。若某平台产物缺失或 `0 assets`,按下方排查。
+`鲸灵_<ver>_aarch64.dmg`、`..._x64.dmg`、`..._x64-setup.exe`、`..._x64_en-US.msi`、`.AppImage`、`.deb`、`.rpm`。若某平台产物缺失或 `0 assets`,按下方排查。
 
 ## 失败排查(本项目已知问题)
 
