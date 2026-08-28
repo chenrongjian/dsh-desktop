@@ -64,22 +64,52 @@ jobs:
         shell: bash
         run: |
           mkdir -p src-tauri/binaries .ff_tmp
+          # 校验产物:必须存在且大于 1MB,防止下载到 HTML 错误页被静默放过
+          verify() {
+            local f="$1"
+            [ -f "$f" ] || return 1
+            local sz; sz=$(wc -c < "$f")
+            [ "$sz" -gt 1000000 ] || return 1
+          }
           case "${{ matrix.platform }}" in
             macos-*)
-              curl -sL --retry 3 -o .ff_tmp/ff.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
+              curl -sL --retry 3 --max-time 600 -o .ff_tmp/ff.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
+              unzip -tq .ff_tmp/ff.zip || { echo "::error::ffmpeg zip 校验失败"; exit 1; }
               unzip -o .ff_tmp/ff.zip -d src-tauri/binaries/
               chmod +x src-tauri/binaries/ffmpeg
+              verify src-tauri/binaries/ffmpeg || { echo "::error::ffmpeg 无效"; exit 1; }
               ;;
             windows-*)
-              curl -sL --retry 3 -o .ff_tmp/ff.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+              curl -sL --retry 3 --max-time 600 -o .ff_tmp/ff.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
               "/c/Windows/System32/tar.exe" -xf .ff_tmp/ff.zip -C .ff_tmp
               find .ff_tmp -name ffmpeg.exe | head -1 | xargs -I{} cp {} src-tauri/binaries/ffmpeg.exe
+              verify src-tauri/binaries/ffmpeg.exe || { echo "::error::ffmpeg.exe 无效"; exit 1; }
               ;;
             ubuntu-*)
-              curl -sL --retry 3 -A "Mozilla/5.0 (X11; Linux x86_64)" -o .ff_tmp/ff.tar.xz "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-              mkdir -p .ff_tmp/ffx && tar xJf .ff_tmp/ff.tar.xz -C .ff_tmp/ffx
-              find .ff_tmp/ffx -name ffmpeg -type f | head -1 | xargs -I{} cp {} src-tauri/binaries/ffmpeg
-              chmod +x src-tauri/binaries/ffmpeg
+              # johnvansickle 源不稳定(常返回非 xz 内容),以 GitHub 托管的 BtbN 静态构建为主源
+              ok=0
+              for url in \
+                "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" \
+                "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"; do
+                echo "尝试 ffmpeg 源: $url"
+                rm -f .ff_tmp/ff.tar.xz
+                rm -rf .ff_tmp/ffx
+                if curl -sL --retry 3 --max-time 600 -A "Mozilla/5.0 (X11; Linux x86_64)" -o .ff_tmp/ff.tar.xz "$url" \
+                   && xz -t .ff_tmp/ff.tar.xz 2>/dev/null; then
+                  mkdir -p .ff_tmp/ffx
+                  tar xJf .ff_tmp/ff.tar.xz -C .ff_tmp/ffx
+                  found=$(find .ff_tmp/ffx -name ffmpeg -type f | head -1)
+                  if [ -n "$found" ]; then
+                    cp "$found" src-tauri/binaries/ffmpeg
+                    chmod +x src-tauri/binaries/ffmpeg
+                    ok=1
+                    break
+                  fi
+                fi
+                echo "该源不可用,尝试下一个"
+              done
+              [ "$ok" = "1" ] || { echo "::error::所有 ffmpeg 下载源均失败"; exit 1; }
+              verify src-tauri/binaries/ffmpeg || { echo "::error::ffmpeg 无效"; exit 1; }
               ;;
           esac
           rm -rf .ff_tmp
