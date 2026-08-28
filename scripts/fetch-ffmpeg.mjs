@@ -38,8 +38,6 @@ try {
     // find ffmpeg.exe inside the extracted folder
     const found = execSync(`powershell -Command "(Get-ChildItem -Recurse ${dir} -Filter ffmpeg.exe | Select-Object -First 1).FullName"`).toString().trim();
     if (found) execSync(`copy /Y "${found}" "${target}"`);
-    // tauri.conf.json 的 resources 声明为 binaries/ffmpeg,复制无扩展名副本以匹配打包
-    execSync(`copy /Y "${target}" "${dir}\\ffmpeg"`);
   } else {
     execSync(`mkdir -p ${dir}/ffx && tar xJf ${tmp} -C ${dir}/ffx`, { stdio: 'inherit' });
     const found = execSync(`find ${dir}/ffx -name ffmpeg -type f | head -1`).toString().trim();

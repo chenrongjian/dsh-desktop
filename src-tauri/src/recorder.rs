@@ -70,9 +70,11 @@ fn ffmpeg_name() -> &'static str {
 
 pub fn find_ffmpeg(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(dir) = app.path().resource_dir() {
-        let p = dir.join(ffmpeg_name());
-        if p.exists() {
-            return Ok(p);
+        let name = ffmpeg_name();
+        for candidate in [dir.join("binaries").join(name), dir.join(name)] {
+            if candidate.exists() {
+                return Ok(candidate);
+            }
         }
     }
     if Command::new(ffmpeg_name())
