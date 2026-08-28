@@ -115,6 +115,15 @@ jobs:
           rm -rf .ff_tmp
           ls -la src-tauri/binaries/
 
+      - name: Use ASCII product name on Windows
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          # WiX light.exe 无法处理非 ASCII 输出名(如 鲸灵_0.1.1_x64_en-US.msi),会导致 MSI 打包失败
+          # 仅 Windows 构建临时改用 ASCII 产品名,窗口标题仍由 app.windows[].title 控制,保持中文
+          node -e "const fs=require('fs');const f='src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(f,'utf8'));j.productName='DSH Desktop';fs.writeFileSync(f,JSON.stringify(j,null,2)+String.fromCharCode(10));"
+          node -e "const fs=require('fs');console.log('productName ->', JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).productName)"
+
       - name: Build app bundles
         run: pnpm tauri build --target ${{ matrix.target }}
 
