@@ -179,7 +179,8 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
         emit_progress(app, "解压 Node 运行时…", 0, 0);
         extract_archive(&node_archive, &node_dest)?;
         let _ = fs::remove_file(&node_archive);
-        if cfg!(unix) {
+        #[cfg(unix)]
+        {
             let _ = fs::set_permissions(node_bin(), fs::Permissions::from_mode(0o755));
         }
     }
