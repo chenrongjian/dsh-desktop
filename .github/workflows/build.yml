@@ -30,6 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout deepseek-harness source
+        uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: master
+          path: dsh-harness
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -126,8 +133,8 @@ jobs:
 
       - name: Build app bundles
         env:
-          # CI 无 deepseek-harness 源码，跳过 beforeBuildCommand 中的 runtime 构建步骤
-          DSH_SKIP_RUNTIME: '1'
+          # 指向 checkout 的 deepseek-harness 源码，beforeBuildCommand 据此装配内置 dsh-runtime
+          DSH_PROJECT_DIR: ${{ github.workspace }}/dsh-harness
         run: pnpm tauri build --target ${{ matrix.target }}
 
       - name: Upload bundles
