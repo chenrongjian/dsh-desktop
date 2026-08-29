@@ -131,6 +131,13 @@ export default function App() {
     return () => clearInterval(t);
   }, [recording]);
 
+  // toast 自动消失（3 秒）
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const fmt = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
