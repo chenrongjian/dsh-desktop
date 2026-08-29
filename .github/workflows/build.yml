@@ -135,9 +135,13 @@ jobs:
         env:
           # 指向 checkout 的 deepseek-harness 源码，beforeBuildCommand 据此装配内置 dsh-runtime
           DSH_PROJECT_DIR: ${{ github.workspace }}/dsh-harness
-          # linuxdeploy AppImage 在无 FUSE 环境以 extract-and-run 方式运行，规避 libfuse2 缺失导致打包失败
-          APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: pnpm tauri build --target ${{ matrix.target }}
+        run: |
+          if [ "${{ matrix.platform }}" = "ubuntu-24.04" ]; then
+            # linuxdeploy AppImage 打包在 CI 上已两轮失败（tauri-bundler 吞掉真实 stderr），Linux 只出 deb/rpm
+            pnpm tauri build --target ${{ matrix.target }} --bundles deb,rpm
+          else
+            pnpm tauri build --target ${{ matrix.target }}
+          fi
 
       - name: Upload bundles
         uses: actions/upload-artifact@v4
