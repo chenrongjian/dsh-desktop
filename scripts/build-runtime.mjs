@@ -147,7 +147,9 @@ async function run() {
   const nodeDir = join(TARGET, "node");
   mkdirSync(nodeDir, { recursive: true });
   // tar 自动识别格式：GNU tar 与 bsdtar 均支持；Windows 自带 bsdtar 可解 zip
-  sh(`tar -xf "${archive}" -C "${nodeDir}" --strip-components=1`);
+  // 注意：Windows 的 bsdtar 会把反斜杠驱动器路径 D:\... 误解析为网络地址（Cannot connect to D:），必须用正斜杠
+  const norm = (p) => p.replace(/\\/g, "/");
+  sh(`tar -xf "${norm(archive)}" -C "${norm(nodeDir)}" --strip-components=1`);
   rmSync(archive, { force: true });
 
   // 7) 验证 + 写 runtime.json
