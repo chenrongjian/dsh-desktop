@@ -10,7 +10,7 @@ const dir = path.join(root, 'src-tauri', 'binaries');
 const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
 const target = path.join(dir, exe);
 
-if (existsSync(target) && statSync(target).size > 1_000_000) {
+if (existsSync(target) && statSync(target).size > 100_000) {
   console.log(`[ffmpeg] 已存在: ${target} (${(statSync(target).size / 1024 / 1024).toFixed(1)} MB)`);
   process.exit(0);
 }

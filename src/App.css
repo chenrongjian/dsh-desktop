@@ -42,11 +42,12 @@ body,
   align-items: center;
   justify-content: space-between;
   height: 44px;
-  padding: 0 14px;
-  background: var(--panel);
+  padding: 0 14px 0 82px;
+  background: rgba(22, 24, 31, 0.92);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
   -webkit-app-region: drag;
+  backdrop-filter: blur(14px);
 }
 
 .topbar button {
@@ -129,6 +130,32 @@ body,
 .error-bar {
   background: rgba(229, 72, 77, 0.92);
   color: #fff;
+}
+
+.perm-bar {
+  position: fixed;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  max-width: 80%;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: rgba(229, 160, 60, 0.95);
+  color: #1a1200;
+}
+
+.perm-bar button {
+  -webkit-app-region: no-drag;
+  margin-left: 8px;
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.25);
+  color: #1a1200;
+  cursor: pointer;
+  font-size: 12px;
 }
 
 .toast {

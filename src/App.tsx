@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -18,6 +18,7 @@ interface DetectResult {
   version: string | null;
   node: string | null;
   note: string | null;
+  kind: string;
 }
 
 interface SetupInfo {
@@ -53,7 +54,24 @@ export default function App() {
   // 录制状态
   const [recording, setRecording] = useState(false);
   const [recDur, setRecDur] = useState(0);
+  const [screenPerm, setScreenPerm] = useState<boolean | null>(null);
   const recStart = useRef<number>(0);
+  // iframe 重载计数（重启后强制刷新）
+  const [frameKey, setFrameKey] = useState(0);
+  // 防止多次触发自动启动
+  const autoStarted = useRef(false);
+
+  const start = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await invoke("dsh_start");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
 
   useEffect(() => {
     let un: UnlistenFn[] = [];
@@ -63,6 +81,7 @@ export default function App() {
         ["dsh-status", (p: DshStatus) => alive && setStatus(p)],
         ["setup-status", (p: SetupInfo) => alive && setSetup(p)],
         ["setup-progress", (p: ProgressPayload) => alive && setProgress(p)],
+        ["screen-permission", (p: boolean) => alive && setScreenPerm(p)],
         ["recorder-done", (p: string) => {
           if (!alive) return;
           setRecording(false);
@@ -81,22 +100,29 @@ export default function App() {
           /* ignore */
         }
       }
-      const [s, d, st] = await Promise.all([
+      const [s, d, st, perm] = await Promise.all([
         invoke<DshStatus>("dsh_status"),
         invoke<DetectResult>("dsh_detect"),
         invoke<SetupInfo>("setup_status"),
+        invoke<boolean>("recorder_permission_status"),
       ]);
+      if (alive) setScreenPerm(perm);
       if (alive) {
         setStatus(s);
         setDetect(d);
         setSetup(st);
+        // 自动启动：检测到 dsh 且尚未运行时在后台直接启动
+        if (d.found && !s.running && !autoStarted.current) {
+          autoStarted.current = true;
+          start();
+        }
       }
     })();
     return () => {
       alive = false;
       un.forEach((f) => f?.());
     };
-  }, []);
+  }, [start]);
 
   // 录制计时
   useEffect(() => {
@@ -108,32 +134,23 @@ export default function App() {
   const fmt = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
-  const start = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await invoke("dsh_start");
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const stop = useCallback(async () => {
-    setError(null);
-    try {
-      await invoke("dsh_stop");
-    } catch (e) {
-      setError(String(e));
-    }
-  }, []);
-
   const restart = useCallback(async () => {
     setBusy(true);
     setError(null);
+    setToast(null);
     try {
       await invoke("dsh_restart");
+      setToast("dsh 已重启");
+      // 等待 dsh 重新监听端口后刷新状态与 iframe
+      setTimeout(async () => {
+        try {
+          const s = await invoke<DshStatus>("dsh_status");
+          setStatus(s);
+        } catch {
+          /* ignore */
+        }
+        setFrameKey((k) => k + 1);
+      }, 1500);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -150,9 +167,30 @@ export default function App() {
     }
   }, [status]);
 
+  const requestScreenPermission = useCallback(async () => {
+    try {
+      await invoke("recorder_request_permission");
+    } catch {
+      /* ignore */
+    }
+    try {
+      const ok = await invoke<boolean>("recorder_permission_status");
+      setScreenPerm(ok);
+      if (!ok) {
+        await invoke("recorder_open_settings");
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
   const toggleRec = useCallback(async () => {
     setError(null);
     setToast(null);
+    if (screenPerm === false) {
+      await requestScreenPermission();
+      return;
+    }
     if (recording) {
       try {
         const r = await invoke<StopResult>("recorder_stop");
@@ -170,7 +208,7 @@ export default function App() {
         setError(String(e));
       }
     }
-  }, [recording]);
+  }, [recording, screenPerm, requestScreenPermission]);
 
   const install = useCallback(async () => {
     setBusy(true);
@@ -188,6 +226,18 @@ export default function App() {
   const running = status?.running === true;
   const installing = progress !== null && progress.total > 0 && progress.pct < 100;
 
+  // 桌面端加载 dsh UI 时附加 client=desktop 参数，供 webui 插件识别（如 dsh-recorder 据此隐藏侧栏录制按钮，避免与右上角录制重复）
+  const frameUrl = useMemo(() => {
+    if (!status?.url) return "about:blank";
+    try {
+      const u = new URL(status.url);
+      u.searchParams.set("client", "desktop");
+      return u.toString();
+    } catch {
+      return status.url;
+    }
+  }, [status]);
+
   return (
     <div className="shell">
       {running ? (
@@ -204,24 +254,28 @@ export default function App() {
                 className={recording ? "rec-btn recording" : "rec-btn"}
                 title={recording ? "停止录制" : "开始录制（屏幕 + 麦克风）"}
               >
-                {recording ? `⏹ ${fmt(recDur)}` : "● 录制"}
+                {recording ? `⏹ ${fmt(recDur)}` : screenPerm === false ? "● 授权录制" : "● 录制"}
               </button>
               <button onClick={openBrowser} title="在系统浏览器中打开">
                 ↗ 浏览器
               </button>
               <button onClick={restart} disabled={busy} title="重启 dsh 服务">
-                ⟳ 重启
-              </button>
-              <button onClick={stop} className="danger" title="停止 dsh 服务">
-                ⏹ 停止
+                {busy ? "重启中…" : "⟳ 重启"}
               </button>
             </div>
           </header>
+          {screenPerm === false && (
+            <div className="perm-bar">
+              需要屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许「鲸灵」，或
+              <button onClick={requestScreenPermission}>打开系统设置</button>
+            </div>
+          )}
           {error && <div className="error-bar">{error}</div>}
           {toast && <div className="toast">{toast}</div>}
           <iframe
+            key={frameKey}
             className="main-frame"
-            src={status?.url ?? "about:blank"}
+            src={frameUrl}
             title="DeepSeek Harness"
             allow="clipboard-read; clipboard-write; microphone; camera"
           />
@@ -234,16 +288,18 @@ export default function App() {
 
           <div className="card">
             <div className="row">
-              <span>dsh 检测</span>
+              <span>dsh 运行时</span>
               <span className={detect?.found ? "ok" : "bad"}>
                 {detect?.found
-                  ? `✓ ${detect.path} (${detect.version ?? "?"})`
+                  ? detect.kind === "builtin"
+                    ? `✓ 内置运行时 v${detect.version ?? "?"}`
+                    : `✓ ${detect.path} (${detect.version ?? "?"})`
                   : detect
                     ? `✗ ${detect.note ?? "未找到"}`
                     : "检测中…"}
               </span>
             </div>
-            {detect?.node && (
+            {detect?.node && detect.kind !== "builtin" && (
               <div className="row">
                 <span>Node 运行时</span>
                 <span className="dim">{detect.node}</span>

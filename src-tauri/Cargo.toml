@@ -29,6 +29,9 @@ scap = "0.0.8"
 cpal = "0.15"
 dasp_sample = "0.11"
 
+[patch.crates-io]
+scap = { path = "vendor/scap-0.0.8" }
+
 [profile.release]
 strip = true
 lto = true

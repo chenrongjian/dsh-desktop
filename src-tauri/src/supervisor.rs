@@ -54,6 +54,13 @@ fn dsh_home() -> PathBuf {
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".dsh"))
 }
 
+/// 内置运行时目录（随应用打包的 Node + dsh），形如 `<Resources>/binaries/dsh-runtime`。
+fn builtin_runtime(app: &AppHandle) -> Option<PathBuf> {
+    let dir = app.path().resource_dir().ok()?.join("binaries/dsh-runtime");
+    let ok = dir.join("node/bin/node").exists() && dir.join("apps/cli/lib/bin.js").exists();
+    ok.then_some(dir)
+}
+
 fn node_version() -> Option<String> {
     let out = Command::new("node").arg("--version").output().ok()?;
     if !out.status.success() {
@@ -95,11 +102,37 @@ fn run_version(cmd: &mut Command) -> Option<String> {
 
 /// 探测本机可用的 dsh：
 /// 1) PATH 中的 dsh 可执行；2) 常见 dsh 源码项目（node bin.ts）。
-pub fn detect() -> DetectResult {
+fn default_path() -> String {
+    let base = std::env::var("PATH").unwrap_or_default();
+    format!("{base}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/sbin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin")
+}
+
+pub fn detect(app: &AppHandle) -> DetectResult {
     let node = node_version();
 
+    // 0) 内置运行时（随应用打包，最高优先级）
+    if let Some(dir) = builtin_runtime(app) {
+        let ver = run_version(
+            Command::new(dir.join("node/bin/node"))
+                .arg("apps/cli/lib/bin.js")
+                .arg("--version")
+                .current_dir(&dir),
+        );
+        let dsh_ver = ver.unwrap_or_else(|| "?".into());
+        let node_ver = run_version(Command::new(dir.join("node/bin/node")).arg("--version"));
+        return DetectResult {
+            found: true,
+            path: Some(format!("内置运行时 {}", dsh_ver)),
+            version: Some(dsh_ver),
+            node: node_ver,
+            note: None,
+            kind: "builtin".into(),
+            project: Some(dir.to_string_lossy().into_owned()),
+        };
+    }
+
     // 1) PATH 中的 dsh
-    let cli_ver = run_version(Command::new("dsh").arg("--version"));
+    let cli_ver = run_version(Command::new("dsh").arg("--version").env("PATH", default_path()));
     if let Some(ver) = cli_ver {
         return DetectResult {
             found: true,
@@ -120,7 +153,8 @@ pub fn detect() -> DetectResult {
         let ver = run_version(
             Command::new("node")
                 .args(["--import", "tsx/esm", "apps/cli/src/bin.ts", "--version"])
-                .current_dir(&proj),
+                .current_dir(&proj)
+                .env("PATH", default_path()),
         );
         if let Some(ver) = ver {
             return DetectResult {
@@ -141,10 +175,7 @@ pub fn detect() -> DetectResult {
         path: None,
         version: None,
         node,
-        note: Some(
-            "未找到 dsh：请通过 PATH 安装 dsh，或将源码项目放在常见位置（~/WorkBuddy/DeepSeek/deepseek-harness）。"
-                .into(),
-        ),
+        note: Some("未找到 dsh，且内置运行时不可用。请重新安装应用，或通过 PATH 安装 dsh。".into()),
         kind: String::new(),
         project: None,
     }
@@ -152,8 +183,16 @@ pub fn detect() -> DetectResult {
 
 fn build_dsh_command(det: &DetectResult, port: u16) -> Result<Command, String> {
     let mut cmd = match det.kind.as_str() {
-        "cli" => {
-            let mut c = Command::new("dsh");
+        "builtin" => {
+            let dir = det
+                .project
+                .as_ref()
+                .map(PathBuf::from)
+                .ok_or_else(|| "缺少内置运行时路径".to_string())?;
+            let node = dir.join("node/bin/node");
+            let mut c = Command::new(node);
+            c.env("PATH", format!("{}:{}", dir.join("node/bin").display(), default_path()));
+            c.arg("apps/cli/lib/bin.js");
             c.args([
                 "--profile",
                 "web",
@@ -161,6 +200,22 @@ fn build_dsh_command(det: &DetectResult, port: u16) -> Result<Command, String> {
                 "127.0.0.1",
                 "--port",
                 &port.to_string(),
+                "--no-open",
+            ]);
+            c.current_dir(&dir);
+            c
+        }
+        "cli" => {
+            let mut c = Command::new("dsh");
+            c.env("PATH", default_path());
+            c.args([
+                "--profile",
+                "web",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                &port.to_string(),
+                "--no-open",
             ]);
             c
         }
@@ -170,6 +225,7 @@ fn build_dsh_command(det: &DetectResult, port: u16) -> Result<Command, String> {
                 .as_ref()
                 .ok_or_else(|| "缺少项目路径".to_string())?;
             let mut c = Command::new("node");
+            c.env("PATH", default_path());
             c.args([
                 "--import",
                 "tsx/esm",
@@ -180,6 +236,7 @@ fn build_dsh_command(det: &DetectResult, port: u16) -> Result<Command, String> {
                 "127.0.0.1",
                 "--port",
                 &port.to_string(),
+                "--no-open",
             ]);
             c.current_dir(dir);
             c
@@ -205,7 +262,7 @@ pub fn start(app: &AppHandle, port: u16) -> Result<u32, String> {
         return Ok(0);
     }
 
-    let det = detect();
+    let det = detect(app);
     if !det.found {
         return Err(det.note.unwrap_or_else(|| "未找到 dsh".into()));
     }
@@ -241,6 +298,11 @@ pub fn stop(app: &AppHandle) -> Result<(), String> {
 
 pub fn restart(app: &AppHandle) -> Result<u32, String> {
     stop(app)?;
+    // 等待端口释放（SIGKILL 后 socket 释放需要短暂时间），否则 start 会误判"已在运行"直接跳过
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while port_open(DEFAULT_PORT) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
     start(app, DEFAULT_PORT)
 }
 
@@ -261,7 +323,7 @@ pub fn status(app: &AppHandle) -> DshStatus {
     // 端口可达（例如在浏览器中已打开的 dsh）同样视为运行中
     let up = port_open(DEFAULT_PORT);
     let running = proc_running || up;
-    let det = detect();
+    let det = detect(app);
     DshStatus {
         running,
         url: Some(format!("http://127.0.0.1:{DEFAULT_PORT}")),
@@ -355,8 +417,8 @@ pub fn dsh_status(app: AppHandle) -> DshStatus {
 }
 
 #[tauri::command]
-pub fn dsh_detect() -> DetectResult {
-    detect()
+pub fn dsh_detect(app: AppHandle) -> DetectResult {
+    detect(&app)
 }
 
 #[tauri::command]
@@ -372,18 +434,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detect_finds_dsh() {
-        let d = detect();
-        assert!(d.found, "应检测到 dsh：{d:?}");
-        assert!(matches!(d.kind.as_str(), "cli" | "project"));
-    }
-
-    #[test]
-    fn build_command_uses_port() {
-        let d = detect();
-        assert!(d.found);
+    fn build_builtin_command_uses_port() {
+        let d = DetectResult {
+            found: true,
+            path: Some("内置运行时".into()),
+            version: Some("0.1.1-rc.2".into()),
+            node: None,
+            note: None,
+            kind: "builtin".into(),
+            project: Some("/tmp/dsh-runtime".into()),
+        };
         let cmd = build_dsh_command(&d, 3080).unwrap();
         let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         assert!(args.iter().any(|a| a == "3080"), "args={args:?}");
+        assert!(args.iter().any(|a| a == "apps/cli/lib/bin.js"), "args={args:?}");
+    }
+
+    #[test]
+    fn build_builtin_command_rejects_missing_project() {
+        let d = DetectResult {
+            found: true,
+            path: None,
+            version: None,
+            node: None,
+            note: None,
+            kind: "builtin".into(),
+            project: None,
+        };
+        assert!(build_dsh_command(&d, 3080).is_err());
     }
 }

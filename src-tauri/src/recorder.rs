@@ -180,7 +180,8 @@ fn build_ffmpeg_encode_cmd(
         .args(["-s", &format!("{w}x{h}"), "-r", &fps.to_string()])
         .args(["-i", "pipe:0"])
         .args(["-an", "-c:v", "libx264", "-preset", "veryfast", "-b:v", bitrate])
-        .args(["-pix_fmt", "yuv420p", silent.to_str().unwrap()]);
+        .args(["-pix_fmt", "yuv420p", silent.to_str().unwrap()])
+        .stdin(Stdio::piped());
     c
 }
 
@@ -235,6 +236,17 @@ fn mux(
     Ok(())
 }
 
+/// 查找鲸灵自身窗口作为录制目标（只录本应用窗口，不录整个桌面）。
+/// 找不到时返回 None（回退为全屏捕获）。
+fn find_own_window() -> Option<scap::Target> {
+    scap::get_all_targets().into_iter().find(|t| match t {
+        scap::Target::Window(w) => {
+            w.title.contains("鲸灵") || w.title.contains("dsh-desktop")
+        }
+        _ => false,
+    })
+}
+
 fn record_loop(
     app: AppHandle,
     stop: Arc<AtomicBool>,
@@ -273,12 +285,12 @@ fn record_loop(
         audio_jobs.push((std::thread::spawn(move || capture_audio(dev, guard, s)), p));
     }
 
-    // 屏幕捕获
+    // 屏幕捕获（只录鲸灵自身窗口，不录整个桌面）
     let options = Options {
         fps: 30,
         show_cursor: true,
         show_highlight: false,
-        target: None,
+        target: find_own_window(),
         crop_area: None,
         output_type: scap::frame::FrameType::YUVFrame,
         output_resolution: res,
@@ -294,12 +306,12 @@ fn record_loop(
     let mut stdin = child.stdin.take().ok_or("ffmpeg stdin 不可用")?;
 
     capturer.start_capture();
-    loop {
-        if stop.load(Ordering::Relaxed) {
-            break;
-        }
-        match capturer.get_next_frame() {
-            Ok(Frame::YUVFrame(f)) => {
+
+    // 非阻塞轮询：try_get_next_frame 立即返回，stop 可在 10ms 内响应。
+    // （原 get_next_frame 在屏幕静止时会无限阻塞，导致停止无法生效、UI 卡死）
+    while !stop.load(Ordering::Relaxed) {
+        match capturer.try_get_next_frame() {
+            Some(Frame::YUVFrame(f)) => {
                 if stdin.write_all(&f.luminance_bytes).is_err() {
                     break;
                 }
@@ -307,8 +319,8 @@ fn record_loop(
                     break;
                 }
             }
-            Ok(_) => continue,
-            Err(_) => break,
+            Some(_) => {}
+            None => std::thread::sleep(std::time::Duration::from_millis(10)),
         }
     }
     capturer.stop_capture();
@@ -401,7 +413,13 @@ pub fn recorder_stop(app: AppHandle) -> Result<StopResult, String> {
     };
     rec.stop.store(true, Ordering::Relaxed);
     if let Some(t) = rec.thread {
-        let _ = t.join();
+        // 超时 join 兜底：正常几百 ms 内退出，极端情况最多阻塞 8 秒
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        let _watcher = std::thread::spawn(move || {
+            let _ = t.join();
+            let _ = done_tx.send(());
+        });
+        let _ = done_rx.recv_timeout(std::time::Duration::from_secs(8));
     }
     let dur = rec.started.elapsed().as_secs_f64();
     let size = fs::metadata(&rec.output).map(|m| m.len()).unwrap_or(0);
@@ -436,12 +454,27 @@ pub fn recorder_check_blackhole() -> bool {
 }
 
 #[tauri::command]
-pub fn recorder_request_permission() -> Result<(), String> {
+pub fn recorder_permission_status() -> bool {
+    scap::has_permission()
+}
+
+#[tauri::command]
+pub fn recorder_request_permission() -> Result<bool, String> {
     if !scap::has_permission() {
         scap::request_permission();
-        return Err("请在系统设置中授权屏幕录制后重试".into());
     }
-    Ok(())
+    Ok(scap::has_permission())
+}
+
+#[tauri::command]
+pub fn recorder_open_settings(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+            None::<&str>,
+        )
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

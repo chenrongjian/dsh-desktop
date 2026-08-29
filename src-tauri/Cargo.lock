@@ -3920,8 +3920,6 @@ dependencies = [
 [[package]]
 name = "scap"
 version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55817d631bc81ba5f347ff5e112c87b8cc0dd99fac0e8e363bf451c3edfdb763"
 dependencies = [
  "cocoa",
  "core-graphics-helmer-fork",

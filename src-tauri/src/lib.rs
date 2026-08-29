@@ -3,6 +3,7 @@ mod recorder;
 mod supervisor;
 
 use std::sync::Mutex;
+use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,6 +18,18 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             supervisor::setup_tray(&handle)?;
+
+            // 应用启动后主动请求屏幕录制权限（只做一次系统提示），并同步状态给前端。
+            // 注意：macOS 屏幕录制权限与代码签名身份绑定；ad-hoc 签名每次重新部署后
+            // 系统会把它视为新应用，权限会失效。要真正“永久”，需 Apple Developer 证书签名。
+            let perm_handle = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                if scap::is_supported() && !scap::has_permission() {
+                    scap::request_permission();
+                }
+                let _ = perm_handle.emit("screen-permission", scap::has_permission());
+            });
 
             // 录制能力自检（ffmpeg / 屏幕权限 / BlackHole）
             let self_handle = handle.clone();
@@ -47,7 +60,9 @@ pub fn run() {
             recorder::recorder_stop,
             recorder::recorder_status,
             recorder::recorder_check_blackhole,
+            recorder::recorder_permission_status,
             recorder::recorder_request_permission,
+            recorder::recorder_open_settings,
             recorder::recorder_open_folder,
             download::setup_status,
             download::setup_install,
