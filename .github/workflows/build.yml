@@ -132,6 +132,7 @@ jobs:
           node -e "const fs=require('fs');console.log('productName ->', JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).productName)"
 
       - name: Build app bundles
+        shell: bash
         env:
           # 指向 checkout 的 deepseek-harness 源码，beforeBuildCommand 据此装配内置 dsh-runtime
           DSH_PROJECT_DIR: ${{ github.workspace }}/dsh-harness
