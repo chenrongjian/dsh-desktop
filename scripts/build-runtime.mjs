@@ -146,10 +146,23 @@ async function run() {
   writeFileSync(archive, Buffer.from(await resp.arrayBuffer()));
   const nodeDir = join(TARGET, "node");
   mkdirSync(nodeDir, { recursive: true });
-  // tar 自动识别格式：GNU tar 与 bsdtar 均支持；Windows 自带 bsdtar 可解 zip
-  // 注意：Windows 的 bsdtar 会把反斜杠驱动器路径 D:\... 误解析为网络地址（Cannot connect to D:），必须用正斜杠
-  const norm = (p) => p.replace(/\\/g, "/");
-  sh(`tar -xf "${norm(archive)}" -C "${norm(nodeDir)}" --strip-components=1`);
+  if (isWin) {
+    // Windows 上不能用 tar 解压：shell: bash 时 PATH 里是 Git 的 GNU tar，会把含驱动器冒号的路径
+    // （D:\... / D:/...）误判为远程磁带主机（host:path）并报 "Cannot connect to D:"
+    // PowerShell 原生 Expand-Archive 无此路径解析问题
+    console.log("[build-runtime] 使用 Expand-Archive 解压 Node 归档…");
+    sh(`powershell -NoProfile -Command "Expand-Archive -LiteralPath '${archive}' -DestinationPath '${nodeDir}' -Force"`);
+    // Expand-Archive 不解 strip-components，需把顶层 node-v*-win-x64/ 内容上移
+    const top = readdirSync(nodeDir).find((n) => n.toLowerCase().startsWith("node-") && n.toLowerCase().includes("win-x64"));
+    if (top) {
+      const topDir = join(nodeDir, top);
+      for (const e of readdirSync(topDir)) cpSync(join(topDir, e), join(nodeDir, e), { recursive: true });
+      rmSync(topDir, { recursive: true, force: true });
+    }
+  } else {
+    // tar 自动识别格式：GNU tar 与 bsdtar 均支持
+    sh(`tar -xf "${archive}" -C "${nodeDir}" --strip-components=1`);
+  }
   rmSync(archive, { force: true });
 
   // 7) 验证 + 写 runtime.json
