@@ -164,6 +164,21 @@ jobs:
           pattern: bundle-*
           merge-multiple: true
 
+      - name: Normalize asset filenames (unicode -> ascii)
+        run: |
+          cd bundles
+          node -e '
+            const fs = require("fs");
+            for (const f of fs.readdirSync(".")) {
+              if (/[^\x00-\x7F]/.test(f)) {
+                const clean = "dsh-desktop" + f.replace(/[^\x00-\x7F]/g, "");
+                fs.renameSync(f, clean);
+                console.log(f, "->", clean);
+              }
+            }
+          '
+          ls -la
+
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
