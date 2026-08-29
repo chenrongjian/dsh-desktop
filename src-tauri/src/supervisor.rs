@@ -118,12 +118,14 @@ pub fn detect(app: &AppHandle) -> DetectResult {
                 .arg("--version")
                 .current_dir(&dir),
         );
-        let dsh_ver = ver.unwrap_or_else(|| "?".into());
         let node_ver = run_version(Command::new(dir.join("node/bin/node")).arg("--version"));
         return DetectResult {
             found: true,
-            path: Some(format!("内置运行时 {}", dsh_ver)),
-            version: Some(dsh_ver),
+            path: Some(format!(
+                "内置运行时{}",
+                ver.as_ref().map(|v| format!(" {v}")).unwrap_or_default()
+            )),
+            version: ver,
             node: node_ver,
             note: None,
             kind: "builtin".into(),

@@ -258,7 +258,7 @@ export default function App() {
             <div className="actions">
               <button
                 onClick={toggleRec}
-                className={recording ? "rec-btn recording" : "rec-btn"}
+                className={recording ? "recording" : undefined}
                 title={recording ? "停止录制" : "开始录制（屏幕 + 麦克风）"}
               >
                 {recording ? `⏹ ${fmt(recDur)}` : screenPerm === false ? "● 授权录制" : "● 录制"}

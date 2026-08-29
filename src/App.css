@@ -102,16 +102,10 @@ body,
   background: #262b36;
 }
 
-.rec-btn {
-  color: #ff6b6b !important;
-  border-color: rgba(255, 90, 90, 0.4) !important;
-  font-weight: 600;
-}
-
-.rec-btn.recording {
-  color: #fff !important;
-  background: linear-gradient(135deg, #e5484d, #c9303a) !important;
-  border-color: transparent !important;
+.actions button.recording {
+  color: #fff;
+  background: linear-gradient(135deg, #e5484d, #c9303a);
+  border-color: transparent;
 }
 
 .error-bar,
