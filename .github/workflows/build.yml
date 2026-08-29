@@ -125,6 +125,9 @@ jobs:
           node -e "const fs=require('fs');console.log('productName ->', JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')).productName)"
 
       - name: Build app bundles
+        env:
+          # CI 无 deepseek-harness 源码，跳过 beforeBuildCommand 中的 runtime 构建步骤
+          DSH_SKIP_RUNTIME: '1'
         run: pnpm tauri build --target ${{ matrix.target }}
 
       - name: Upload bundles

@@ -35,8 +35,16 @@ function sh(cmd, opts = {}) {
   return execSync(cmd, { stdio: "inherit", ...opts });
 }
 
-async function run() {  console.log(`[build-runtime] target=${TARGET}`);
+async function run() {
+  console.log(`[build-runtime] target=${TARGET}`);
   console.log(`[build-runtime] project=${PROJECT_DIR}`);
+
+  // CI 场景：GitHub Actions 无 deepseek-harness 源码，跳过 runtime 构建
+  //（CI workflow 已通过 DSH_SKIP_RUNTIME=1 传入；产物不含内置 dsh-runtime，与历史一致）
+  if (process.env.DSH_SKIP_RUNTIME === "1") {
+    console.log("[build-runtime] DSH_SKIP_RUNTIME=1，跳过 runtime 构建");
+    return;
+  }
 
   if (!existsSync(join(PROJECT_DIR, "pnpm-workspace.yaml"))) {
     console.error(`DSH_PROJECT_DIR 不是有效的 deepseek-harness 项目: ${PROJECT_DIR}`);
