@@ -247,6 +247,51 @@ fn find_own_window() -> Option<scap::Target> {
     })
 }
 
+/// 真实捕获探测：尝试启动屏幕捕获并抓取一帧。
+/// `scap::has_permission()` 依赖 TCC 记录，对 ad-hoc / 未签名本地构建会误报 false，
+/// 即使系统设置里已授权。这里用真实捕获判断「实际能否录屏」，结果更准确。
+pub fn probe_capture_permission() -> bool {
+    if !scap::is_supported() {
+        return false;
+    }
+    let options = Options {
+        fps: 1,
+        show_cursor: false,
+        show_highlight: false,
+        target: None,
+        crop_area: None,
+        output_type: scap::frame::FrameType::YUVFrame,
+        output_resolution: Resolution::Captured,
+        excluded_targets: None,
+    };
+    let Ok(mut capturer) = Capturer::build(options) else {
+        return false;
+    };
+    capturer.start_capture();
+    let deadline = Instant::now() + std::time::Duration::from_secs(2);
+    let mut ok = false;
+    loop {
+        if capturer.try_get_next_frame().is_some() {
+            ok = true;
+            break;
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    capturer.stop_capture();
+    ok
+}
+
+/// 屏幕录制权限状态：先查 TCC 记录，再回退到真实捕获探测。
+pub fn permission_status() -> bool {
+    if scap::has_permission() {
+        return true;
+    }
+    probe_capture_permission()
+}
+
 fn record_loop(
     app: AppHandle,
     stop: Arc<AtomicBool>,
@@ -365,9 +410,11 @@ pub fn recorder_start(
     if !scap::is_supported() {
         return Err("当前系统不支持屏幕捕获".into());
     }
-    if !scap::has_permission() {
+    // 点击录制时才做真实探测：不依赖 TCC 记录（对本地未签名构建不可靠），
+    // 探测失败才提示并请求一次授权，避免启动时反复弹权限横幅。
+    if !permission_status() {
         scap::request_permission();
-        return Err("需要屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许本应用后重试。".into());
+        return Err("未获得屏幕录制权限。请在弹窗或「系统设置 → 隐私与安全性 → 屏幕录制」中允许本应用后重试。".into());
     }
 
     let out_dir = recordings_dir(&app)?;
@@ -455,15 +502,15 @@ pub fn recorder_check_blackhole() -> bool {
 
 #[tauri::command]
 pub fn recorder_permission_status() -> bool {
-    scap::has_permission()
+    permission_status()
 }
 
 #[tauri::command]
 pub fn recorder_request_permission() -> Result<bool, String> {
-    if !scap::has_permission() {
+    if !permission_status() {
         scap::request_permission();
     }
-    Ok(scap::has_permission())
+    Ok(permission_status())
 }
 
 #[tauri::command]

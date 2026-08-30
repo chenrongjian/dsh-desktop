@@ -19,16 +19,14 @@ pub fn run() {
             let handle = app.handle().clone();
             supervisor::setup_tray(&handle)?;
 
-            // 应用启动后主动请求屏幕录制权限（只做一次系统提示），并同步状态给前端。
-            // 注意：macOS 屏幕录制权限与代码签名身份绑定；ad-hoc 签名每次重新部署后
-            // 系统会把它视为新应用，权限会失效。要真正“永久”，需 Apple Developer 证书签名。
+            // 应用启动后同步屏幕录制状态给前端。
+            // 注意：不再主动 request_permission（macOS 对本地 ad-hoc 未签名构建的
+            // TCC 检测不可靠，每次启动弹窗反而造成困扰）；改为真实捕获探测，
+            // 并在用户点击录制时才提示授权。
             let perm_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                if scap::is_supported() && !scap::has_permission() {
-                    scap::request_permission();
-                }
-                let _ = perm_handle.emit("screen-permission", scap::has_permission());
+                let _ = perm_handle.emit("screen-permission", recorder::permission_status());
             });
 
             // 录制能力自检（ffmpeg / 屏幕权限 / BlackHole）
@@ -36,7 +34,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                 let ffmpeg = recorder::find_ffmpeg(&self_handle).is_ok();
-                let permitted = scap::has_permission();
+                let permitted = recorder::permission_status();
                 let blackhole = recorder::find_input_device("blackhole").is_some();
                 println!(
                     "[SELFCHECK] ffmpeg={} screen_permission={} blackhole={}",

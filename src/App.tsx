@@ -54,7 +54,6 @@ export default function App() {
   // 录制状态
   const [recording, setRecording] = useState(false);
   const [recDur, setRecDur] = useState(0);
-  const [screenPerm, setScreenPerm] = useState<boolean | null>(null);
   const recStart = useRef<number>(0);
   // iframe 重载计数（重启后强制刷新）
   const [frameKey, setFrameKey] = useState(0);
@@ -81,7 +80,6 @@ export default function App() {
         ["dsh-status", (p: DshStatus) => alive && setStatus(p)],
         ["setup-status", (p: SetupInfo) => alive && setSetup(p)],
         ["setup-progress", (p: ProgressPayload) => alive && setProgress(p)],
-        ["screen-permission", (p: boolean) => alive && setScreenPerm(p)],
         ["recorder-done", (p: string) => {
           if (!alive) return;
           setRecording(false);
@@ -100,13 +98,11 @@ export default function App() {
           /* ignore */
         }
       }
-      const [s, d, st, perm] = await Promise.all([
+      const [s, d, st] = await Promise.all([
         invoke<DshStatus>("dsh_status"),
         invoke<DetectResult>("dsh_detect"),
         invoke<SetupInfo>("setup_status"),
-        invoke<boolean>("recorder_permission_status"),
       ]);
-      if (alive) setScreenPerm(perm);
       if (alive) {
         setStatus(s);
         setDetect(d);
@@ -174,30 +170,9 @@ export default function App() {
     }
   }, [status]);
 
-  const requestScreenPermission = useCallback(async () => {
-    try {
-      await invoke("recorder_request_permission");
-    } catch {
-      /* ignore */
-    }
-    try {
-      const ok = await invoke<boolean>("recorder_permission_status");
-      setScreenPerm(ok);
-      if (!ok) {
-        await invoke("recorder_open_settings");
-      }
-    } catch (e) {
-      setError(String(e));
-    }
-  }, []);
-
   const toggleRec = useCallback(async () => {
     setError(null);
     setToast(null);
-    if (screenPerm === false) {
-      await requestScreenPermission();
-      return;
-    }
     if (recording) {
       try {
         const r = await invoke<StopResult>("recorder_stop");
@@ -215,7 +190,7 @@ export default function App() {
         setError(String(e));
       }
     }
-  }, [recording, screenPerm, requestScreenPermission]);
+  }, [recording]);
 
   const install = useCallback(async () => {
     setBusy(true);
@@ -261,7 +236,7 @@ export default function App() {
                 className={recording ? "recording" : undefined}
                 title={recording ? "停止录制" : "开始录制（屏幕 + 麦克风）"}
               >
-                {recording ? `⏹ ${fmt(recDur)}` : screenPerm === false ? "● 授权录制" : "● 录制"}
+                {recording ? `⏹ ${fmt(recDur)}` : "● 录制"}
               </button>
               <button onClick={openBrowser} title="在系统浏览器中打开">
                 ↗ 浏览器
@@ -271,12 +246,6 @@ export default function App() {
               </button>
             </div>
           </header>
-          {screenPerm === false && (
-            <div className="perm-bar">
-              需要屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许「鲸灵」，或
-              <button onClick={requestScreenPermission}>打开系统设置</button>
-            </div>
-          )}
           {error && <div className="error-bar">{error}</div>}
           {toast && <div className="toast">{toast}</div>}
           <iframe

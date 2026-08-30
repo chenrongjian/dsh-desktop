@@ -138,6 +138,15 @@ grep -n -i "error\[E\|error:\|cannot find\|failed to" /tmp/gh_win.txt | head -20
 
 修复后重新发布:commit + push main → 重建 tag(`git tag -d` + 删远端 tag + 重打) → 重新触发 CI。重建 tag 会重新跑全部 4 平台,有 cargo cache 会快很多。
 
+## macOS 本机签名与录屏权限问题
+
+用户遇到"录屏已授权但仍失败""签名报 errSecInternalComponent""ad-hoc 签名权限不持久"等问题时,按 `references/macos-signing-tcc-fix.md` 排查与修复(2026-08-30 实战验证)。要点:
+
+- 根因多为旧版 `Apple Root CA` 缺失/不受信任导致免费 Apple Development 证书链断裂
+- 修复核心:`sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <WWDRCAG3.cer>` 把 WWDRCA G3 设为信任根,再 codesign 签名
+- 签名成功后必须「系统设置 → 录屏与系统录音」里**删除**应用条目再重新授权,否则新签名身份不生效
+- 详见 reference 文档中的完整命令与陷阱清单
+
 ## 前置检查清单
 
 发布前确认:
