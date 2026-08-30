@@ -22,7 +22,7 @@ Tauri 打包未签名(或 ad-hoc 签名)
 关键事实：
 
 - 免费 Apple Development 证书的链是：
-  `Apple Development: xxx (D4W8UX8L4D)` → `Apple Worldwide Developer Relations CA G3` → **旧版 `Apple Root CA`**（注意是旧版根，不是 `Apple Root CA - G3`）。
+  `Apple Development: you@example.com (XXXXXXXXXX)` → `Apple Worldwide Developer Relations CA G3` → **旧版 `Apple Root CA`**（注意是旧版根，不是 `Apple Root CA - G3`）。
 - macOS 15+ 的系统信任存储已移除旧版 `Apple Root CA`，因此默认信任策略下链无法闭合。
 - `security verify-cert` 能通过（它按 AKI/SKI 匹配验证），但 `codesign` 的链校验更严格，要求到受信任根。
 
@@ -36,10 +36,10 @@ codesign -dv --verbose=2 /Applications/鲸灵.app 2>&1
 security find-identity -v -p codesigning
 
 # 3. 尝试签名(报 errSecInternalComponent)
-codesign --force --deep --sign "Apple Development: 1721713949@qq.com (D4W8UX8L4D)" /Applications/鲸灵.app
+codesign --force --deep --sign "Apple Development: you@example.com (XXXXXXXXXX)" /Applications/鲸灵.app
 
 # 4. 检查证书链:比对 AKI/SKI 确认签发关系
-security find-certificate -c "Apple Development: 1721713949@qq.com" -p ~/Library/Keychains/login.keychain-db \
+security find-certificate -c "Apple Development: you@example.com" -p ~/Library/Keychains/login.keychain-db \
   | openssl x509 -noout -text | grep -A4 -E "Authority Key Identifier|Subject Key Identifier"
 # 期望:Apple Development 的 AKI == WWDRCA G3 的 SKI;WWDRCA G3 的 AKI == 旧版 Apple Root CA 的 SKI
 
@@ -83,7 +83,7 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 ### 第 3 步：重新签名
 
 ```bash
-codesign --force --deep --sign "Apple Development: 1721713949@qq.com (D4W8UX8L4D)" /Applications/鲸灵.app
+codesign --force --deep --sign "Apple Development: you@example.com (XXXXXXXXXX)" /Applications/鲸灵.app
 ```
 
 ### 第 4 步：验证签名
@@ -96,7 +96,7 @@ codesign -dv --verbose=2 /Applications/鲸灵.app 2>&1 | grep -E "Signature=|Aut
 
 ```
 Signature=Apple Development
-Authority=Apple Development: 1721713949@qq.com (D4W8UX8L4D)
+Authority=Apple Development: you@example.com (XXXXXXXXXX)
 Authority=Apple Worldwide Developer Relations Certification Authority
 Authority=Apple Root CA
 ```
